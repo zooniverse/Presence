@@ -7,27 +7,44 @@
   <script src='https://cdnjs.cloudflare.com/ajax/libs/d3/3.5.6/d3.min.js'></script>
   <script src='./d3pie.min.js' type='text/javascript' charset='utf-8'></script>
   <script src='https://cdnjs.cloudflare.com/ajax/libs/jquery/2.1.4/jquery.min.js' type='text/javascript' charset='utf-8'></script>
+  <style type="text/css" media="screen">
+    #chart {
+      margin-top: 5%;
+    }
+    
+    #chart svg {
+      overflow: auto;
+    }
+    
+    #update {
+      text-align: center;
+    }
+  </style>
 </head>
-<body style="text-align: center;">
-  <div id='chart'></div>
+<body>
+  <svg id="chart" preserveAspectRatio="xMidYMin meet"
+    width="100%" height="500"
+    viewBox="0 0 590 500"
+  ></svg>
+  <div id="update">
+    <button onclick="loadChart()">Update</button>
+  </div>
 </body>
 <script type='text/javascript' charset='utf-8'>
 var projects = { };
+var pie = null;
 
 function loadProject(channelCount) {
+  d = $.Deferred();
+  
   if(channelCount.channel == 'zooniverse') {
-    channelCount.id = 'zooniverse';
-    channelCount.name = 'Zooniverse'
-    d = $.Deferred();
+    channelCount.name = 'Zooniverse';
     d.resolve(channelCount);
-    return d;
   } else if(projects[channelCount.channel]) {
-    d = $.Deferred();
-    d.resolve(projects[channelCount.channel]);
-    return d;
+    channelCount.name = projects[channelCount.channel];
+    d.resolve(channelCount);
   } else {
     var id = channelCount.channel.split('-')[1];
-    channelCount.id = id;
     return $.ajax({
       type: 'GET',
       url: 'https://panoptes.zooniverse.org/api/projects/' + id,
@@ -38,20 +55,23 @@ function loadProject(channelCount) {
     }).then(function(projectsResponse) {
       project = projectsResponse.projects[0];
       channelCount.name = project.display_name;
-      projects[channelCount.channel] = channelCount;
-      return channelCount;
+      projects[channelCount.channel] = project.display_name;
+      d.resolve(channelCount);
     });
   }
+  
+  return d;
 }
 
 function loadPresence() {
-  return $.get('https://notifications.zooniverse.org/presence').then(function(presence) {
+  var d = $.Deferred();
+  
+  $.get('https://notifications.zooniverse.org/presence').then(function(presence) {
     promisedData = [];
     presence.forEach(function(channelCount) {
       promisedData.push(loadProject(channelCount));
     });
     
-    var d = $.Deferred();
     $.when.apply($, promisedData).done(function() {
       var data = [];
       presence.forEach(function(channelCount) {
@@ -63,91 +83,102 @@ function loadPresence() {
       
       d.resolve(data);
     });
-    
-    return d;
+  });
+  
+  return d;
+}
+
+function createChart(data) {
+  return new d3pie('chart', {
+    header: {
+      title: {
+        text: 'Zooniverse Presence',
+        fontSize: 24,
+        font: 'open sans'
+      },
+      subtitle: {
+        text: 'How many users are participating on each project right now',
+        color: '#999999',
+        fontSize: 12,
+        font: 'open sans'
+      },
+      titleSubtitlePadding: 9
+    },
+    footer: {
+      color: '#999999',
+      fontSize: 10,
+      font: 'open sans',
+      location: 'bottom-left'
+    },
+    size: {
+      canvasWidth: 590,
+      pieOuterRadius: '80%'
+    },
+    data: {
+      sortOrder: 'value-asc',
+      content: data
+    },
+    labels: {
+      outer: {
+        format: 'label-value1',
+        pieDistance: 15
+      },
+      inner: {
+        hideWhenLessThanPercentage: 3
+      },
+      mainLabel: {
+        fontSize: 11
+      },
+      percentage: {
+        color: '#ffffff',
+        decimalPlaces: 0
+      },
+      value: {
+        color: '#adadad',
+        fontSize: 11
+      },
+      lines: {
+        enabled: true
+      },
+      truncation: {
+        enabled: true
+      }
+    },
+    effects: {
+      load: {
+        effect: 'none'
+      },
+      pullOutSegmentOnClick: {
+        effect: 'linear',
+        speed: 400,
+        size: 8
+      }
+    },
+    misc: {
+      gradient: {
+        enabled: true,
+        percentage: 100
+      }
+    },
+    callbacks: {
+      onMouseoverSegment: null,
+      onMouseoutSegment: null,
+      onClickSegment: null
+    }
   });
 }
 
-var pie = new d3pie('chart', {
-  header: {
-    title: {
-      text: 'Zooniverse Presence',
-      fontSize: 24,
-      font: 'open sans'
-    },
-    subtitle: {
-      text: 'How many users are participating on each project right now',
-      color: '#999999',
-      fontSize: 12,
-      font: 'open sans'
-    },
-    titleSubtitlePadding: 9
-  },
-  footer: {
-    color: '#999999',
-    fontSize: 10,
-    font: 'open sans',
-    location: 'bottom-left'
-  },
-  size: {
-    canvasWidth: 590,
-    pieOuterRadius: '80%'
-  },
-  data: {
-    sortOrder: 'value-asc',
-    content: []
-  },
-  labels: {
-    outer: {
-      format: 'label-value1',
-      pieDistance: 15
-    },
-    inner: {
-      hideWhenLessThanPercentage: 3
-    },
-    mainLabel: {
-      fontSize: 11
-    },
-    percentage: {
-      color: '#ffffff',
-      decimalPlaces: 0
-    },
-    value: {
-      color: '#adadad',
-      fontSize: 11
-    },
-    lines: {
-      enabled: true
-    },
-    truncation: {
-      enabled: true
+function loadChart() {
+  loadPresence().then(function(data) {
+    if(pie) {
+      pie.updateProp('data.content', data);
+    } else {
+      pie = createChart(data);
     }
-  },
-  effects: {
-    load: {
-      effect: 'none'
-    },
-    pullOutSegmentOnClick: {
-      effect: 'linear',
-      speed: 400,
-      size: 8
-    }
-  },
-  misc: {
-    gradient: {
-      enabled: true,
-      percentage: 100
-    }
-  },
-  callbacks: {
-    onMouseoverSegment: null,
-    onMouseoutSegment: null,
-    onClickSegment: null
-  }
-});
+  });
+}
 
-loadPresence().then(function(data) {
-  pie.updateProp('data.content', data);
-});
+loadChart();
+
 </script>
 </html>
